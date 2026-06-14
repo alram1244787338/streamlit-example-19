@@ -1,4 +1,4 @@
-import time
+import hashlib
 
 import streamlit as st
 
@@ -11,34 +11,40 @@ st.title("Spiral Scatter Plot")
 num_points = st.sidebar.slider("Number of points in spiral", 1, 10000, 1100)
 num_turns = st.sidebar.slider("Number of turns in spiral", 1, 300, 31)
 
-# ── Data generation (cached by parameter pair) ──────────────────────
-# A flag set *inside* the cached function would not survive the rerun
-# boundary cleanly, so we use a wall-clock proxy: if the call returns
-# in < 5 ms it was a cache hit; otherwise it was freshly computed.
-_t0 = time.perf_counter()
-df = generate_spiral_data(num_points, num_turns)
-_elapsed_ms = (time.perf_counter() - _t0) * 1000
-
-_cache_hit = _elapsed_ms < 5
-_prev_key = st.session_state.get("_last_param_key")
+# ── Parameter-change detection via session_state ────────────────────
+# session_state persists across Streamlit reruns within the same user
+# session, so comparing the current (num_points, num_turns) tuple to the
+# previously stored value gives a reliable "did the user actually move a
+# slider?" signal — without any timing heuristics.
 _curr_key = (num_points, num_turns)
+_prev_key = st.session_state.get("_last_param_key")
+
 if _prev_key != _curr_key:
     st.session_state["_last_param_key"] = _curr_key
-    st.session_state["_was_regenerated"] = True
+    _regenerated = True
 else:
-    st.session_state["_was_regenerated"] = False
+    _regenerated = False
+
+# ── Data generation (cached by parameter pair) ──────────────────────
+df = generate_spiral_data(num_points, num_turns)
+
+# ── Data fingerprint ────────────────────────────────────────────────
+# A short, deterministic hash of the DataFrame content.  Users can
+# visually confirm "same params → same fingerprint → same picture"
+# without having to eyeball the scatter plot.
+_fingerprint = hashlib.sha256(
+    df[["x", "y", "size"]].values.tobytes()
+).hexdigest()[:8]
 
 # ── Status indicator ────────────────────────────────────────────────
-if st.session_state.get("_was_regenerated"):
+if _regenerated:
     st.info("Parameters changed — data regenerated.")
-elif _cache_hit:
-    st.success("Using cached data (same parameters, no regeneration).")
 else:
-    st.info("Data loaded.")
+    st.success("Using cached data (same parameters, no regeneration).")
 
 st.caption(
     f"Points: **{num_points}** · Turns: **{num_turns}** · "
-    f"Elapsed: {_elapsed_ms:.1f} ms"
+    f"Fingerprint: `{_fingerprint}`"
 )
 
 # ── Chart ────────────────────────────────────────────────────────────

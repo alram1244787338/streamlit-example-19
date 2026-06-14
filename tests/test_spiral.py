@@ -93,3 +93,50 @@ def test_chart_builds_without_error():
     spec = chart.to_dict()
     assert spec["mark"]["type"] == "point"
     assert spec["mark"]["filled"] is True
+
+
+# ── Supplementary: data quality ─────────────────────────────────────
+
+def test_sizes_are_not_all_identical():
+    """RNG should produce variation, not a constant column."""
+    df = generate_spiral_data(200, 5)
+    assert df["size"].nunique() > 1, "All sizes are identical"
+
+
+def test_no_nan_in_generated_data():
+    df = generate_spiral_data(1000, 31)
+    assert not df.isnull().any().any(), "DataFrame contains NaN values"
+
+
+def test_dataframe_row_count_matches_num_points():
+    for n in (1, 50, 5000):
+        df = generate_spiral_data(n, 10)
+        assert len(df) == n
+
+
+def test_spiral_starts_at_origin():
+    """idx=0 → radius=0 → (x, y) = (0, 0)."""
+    df = generate_spiral_data(100, 5)
+    first = df.iloc[0]
+    assert first["x"] == 0.0
+    assert first["y"] == 0.0
+
+
+# ── Supplementary: stability stress test ────────────────────────────
+
+def test_ten_consecutive_calls_are_identical():
+    """Hammer the function 10 times — all results must match."""
+    results = [generate_spiral_data(300, 15) for _ in range(10)]
+    for i in range(1, len(results)):
+        assert results[i].equals(results[0]), f"Call {i} diverged"
+
+
+# ── Supplementary: chart encoding ───────────────────────────────────
+
+def test_chart_size_encoding_domain():
+    """Size scale should be pinned to [0.3, 1.0] → [10, 60] px."""
+    df = generate_spiral_data(100, 5)
+    spec = build_spiral_chart(df).to_dict()
+    size_encoding = spec["encoding"]["size"]
+    assert size_encoding["scale"]["domain"] == [0.3, 1.0]
+    assert size_encoding["scale"]["range"] == [10, 60]
